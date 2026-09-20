@@ -85,8 +85,8 @@ run npm test
 run npm pack --dry-run
 
 # --- release notes from the changelog section --------------------------------
-NOTES="$(awk -v ver="$VERSION" '
-  $0 == "## [" ver "] - " '"$TODAY"'" { in_section = 1; next }
+NOTES="$(awk -v ver="$VERSION" -v today="$TODAY" '
+  $0 == "## [" ver "] - " today { in_section = 1; next }
   in_section && /^## \[/ { exit }
   in_section { print }
 ' CHANGELOG.md | sed -e '/./,$!d')"
