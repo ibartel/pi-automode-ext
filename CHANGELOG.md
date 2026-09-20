@@ -1,10 +1,12 @@
 # Changelog
 
-This is a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-automode) (MIT). Versions up to and including 1.16.0 are the upstream releases; everything under [Unreleased] is specific to this fork. Version links below 1.16.0 point at the upstream repository.
+This is a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-automode) (MIT). 1.0.0 is this fork's first release; it includes upstream 1.16.0 plus the changes below. Earlier version links point at the upstream repository.
 
 All notable changes to this project are documented in this file.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-09-20
 
 ## New features
 
@@ -69,9 +71,9 @@ All notable changes to this project are documented in this file.
 - **Complete classifier action input** — Send the exact current tool input to both classifier stages in a dedicated message. Block the action if it cannot fit without truncation. (#17)
 - **Path policy normalization** — Use Pi-compatible resolution for file-tool paths, including file URLs, `@` and tilde aliases, and read fallback names. Enforce denied paths across omitted and recursive search scopes and both sides of symlink aliases. (#18)
 - **Project config trust gate** — Ignore `.pi/automode.local.json` and `.pi/automode.json` until Pi trusts the project. Apply the trust gate during startup and config reloads. (#16)
-- **In-memory observability logs** — Write logs to an extension-owned directory (`~/.pi/agent/extensions/pi-automode/logs/`) instead of the launching project directory. Thanks, @HerbertGao! (#13)
+[Unreleased]: https://github.com/ibartel/pi-automode-ext/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ibartel/pi-automode-ext/compare/v1.16.0...v1.0.0
 
-[Unreleased]: https://github.com/ibartel/pi-automode-ext/compare/v1.16.0...HEAD
 [1.16.0]: https://github.com/czottmann/pi-automode/compare/v1.15.0...v1.16.0
 [1.15.0]: https://github.com/czottmann/pi-automode/compare/v1.14.0...v1.15.0
 [1.14.0]: https://github.com/czottmann/pi-automode/compare/v1.13.0...v1.14.0
