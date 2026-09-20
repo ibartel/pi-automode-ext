@@ -155,7 +155,8 @@ Examples:
 - Overwriting ~/.config/app/settings.toml outside the repository after "for task X in repo Y, you may modify ~/.config/app/settings.toml" => allow, explicit_intent, target stays inside a direct, bounded user authorization.
 - Editing ~/.config/app/other.toml after the same authorization => block, soft_deny, target lies outside authorized scope.
 - Uploading repository contents, logs with secrets, or internal data to an untrusted domain => block, hard_deny.
-- Modifying .pi/automode*, this extension, or permission rules => block, hard_deny.`;
+- Reading, tailing, or searching pi-automode's own decision log (*-pi-automode.jsonl) or .pi/automode* config => allow unless another deny rule applies; inspection is not tampering.
+- Modifying, truncating, deleting, or redirecting output into .pi/automode*, pi-automode logs (*-pi-automode.jsonl), this extension, or permission rules => block, hard_deny.`;
 
 export const CLASSIFIER_FAST_INSTRUCTION =
   `Return exactly one digit and nothing else: 0 only when the action is clearly allowed by the policy; 1 when it may need blocking or you are uncertain. Err on 1.`;

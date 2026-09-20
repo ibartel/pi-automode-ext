@@ -198,7 +198,7 @@ Current deterministic blocks include these actions:
 
 - writes to shell profile files
 - writes to `~/.ssh/authorized_keys`
-- edits to auto-mode or Pi permission safety-control files
+- edits to auto-mode or Pi permission safety-control files, including the pi-automode decision-log sidecars (`*-pi-automode.jsonl`)
 - weaker TLS or certificate verification
 - persistence changes such as cron jobs, launch agents, and system service enablement
 - dangerous recursive deletes of root, home, or system paths

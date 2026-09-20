@@ -49,6 +49,8 @@ Pi in-memory sessions have no session file or session directory. These sessions 
 
 The project directory uses the same `--path-with-dashes--` encoding as normal Pi session directories. The date partition uses UTC.
 
+Decision-log files are safety-control paths. Mutating them with `write`, `edit`, or shell redirection is hard-denied without classifier review. Reading, tailing, and searching them stays allowed.
+
 A custom session manager can supply an absolute `sessionDir` without a session file. In this case, pi-automode continues to use that directory. Run `/automode config` to see the resolved path.
 
 Persisted sessions use one combined file per session. In-memory sessions use one file for each session ID and UTC day.

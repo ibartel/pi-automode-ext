@@ -260,6 +260,11 @@ export function isSafetyControlPath(path: string, cwd: string): boolean {
     return true;
   }
   if (normalized.includes("/.pi/") && file.startsWith("automode")) return true;
+  // Session decision logs (<session>-pi-automode.jsonl) sit next to session
+  // files, outside every branch above. They are the audit trail named by
+  // hard-deny rule #6, so mutating them anywhere is safety-control tampering;
+  // read-only tools are unaffected (only mutation paths consult this).
+  if (file.endsWith("-pi-automode.jsonl")) return true;
   // Installed package copies stay protected. The piAgentRoot extension prefix
   // above already covers the global install location, and a dev checkout of
   // the extension itself must stay editable, so the package name only denies

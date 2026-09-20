@@ -34,6 +34,9 @@ test("classifier policy scopes bounded authorization to existing local files", (
 	assert.match(CLASSIFIER_SYSTEM_PROMPT, /target stays inside a direct, bounded user authorization/);
 	assert.match(CLASSIFIER_SYSTEM_PROMPT, /target lies outside authorized scope/);
 	assert.match(CLASSIFIER_SYSTEM_PROMPT, /Editing internal\/interaction\/dashboard\.go as part of the requested task in the current repository => allow, routine in-repo work/);
+	assert.match(CLASSIFIER_SYSTEM_PROMPT, /Reading, tailing, or searching pi-automode's own decision log/);
+	assert.match(CLASSIFIER_SYSTEM_PROMPT, /inspection is not tampering/);
+	assert.match(CLASSIFIER_SYSTEM_PROMPT, /Modifying, truncating, deleting, or redirecting output into \.pi\/automode\*/);
 });
 
 test("classifier JSON parser accepts valid decisions and rejects invalid output", () => {

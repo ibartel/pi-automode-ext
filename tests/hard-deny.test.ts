@@ -537,3 +537,29 @@ test("deterministic hard deny allows dev checkouts but still denies installed pi
 		);
 	}
 });
+
+test("deterministic hard deny protects the pi-automode session decision log", () => {
+	const log = "/Users/dev/.pi/agent/sessions/abc123-pi-automode.jsonl";
+	// Mutation through file tools and redirect append must hard-deny without
+	// the classifier: the audit log is named by hard-deny rule #6.
+	for (const tool of ["write", "edit"] as const) {
+		assert.match(
+			deterministicHardDeny(tool, { path: log }, "/tmp/project") ?? "",
+			/safety-control/,
+			tool,
+		);
+	}
+	assert.match(
+		deterministicHardDeny("bash", { command: `echo tamper >> ${log}` }, "/tmp/project") ?? "",
+		/safety-control/,
+	);
+	// Read-only inspection stays allowed.
+	assert.equal(
+		deterministicHardDeny("bash", { command: `tail -c 6000 ${log}` }, "/tmp/project"),
+		undefined,
+	);
+	assert.equal(
+		deterministicHardDeny("bash", { command: `grep -c '"outcome":"block"' ${log}` }, "/tmp/project"),
+		undefined,
+	);
+});
