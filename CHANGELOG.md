@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-20
+
 ## Security
 
 - **Deterministic decision-log protection** — The pi-automode session decision logs (`*-pi-automode.jsonl` sidecars) are now safety-control paths: mutating them with `write`, `edit`, or shell redirection is hard-denied without classifier review. Previously the audit log was protected only by the classifier. Reading, tailing, and searching the logs stays allowed.
@@ -76,7 +78,8 @@ All notable changes to this project are documented in this file.
 - **Complete classifier action input** — Send the exact current tool input to both classifier stages in a dedicated message. Block the action if it cannot fit without truncation. (#17)
 - **Path policy normalization** — Use Pi-compatible resolution for file-tool paths, including file URLs, `@` and tilde aliases, and read fallback names. Enforce denied paths across omitted and recursive search scopes and both sides of symlink aliases. (#18)
 - **Project config trust gate** — Ignore `.pi/automode.local.json` and `.pi/automode.json` until Pi trusts the project. Apply the trust gate during startup and config reloads. (#16)
-[Unreleased]: https://github.com/ibartel/pi-automode-ext/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/ibartel/pi-automode-ext/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/ibartel/pi-automode-ext/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/ibartel/pi-automode-ext/compare/v1.16.0...v1.0.0
 
 [1.16.0]: https://github.com/czottmann/pi-automode/compare/v1.15.0...v1.16.0

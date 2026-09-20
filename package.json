@@ -1,6 +1,6 @@
 {
 	"name": "@ibartel74/pi-automode-ext",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Claude Code-style auto mode guardrail for pi.",
 	"repository": {
 		"url": "https://github.com/ibartel/pi-automode-ext"
