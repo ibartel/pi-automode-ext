@@ -267,6 +267,7 @@ export function isSafetyControlPath(path: string, cwd: string): boolean {
   if (
     normalized.includes("/node_modules/pi-automode/") ||
     normalized.includes("/node_modules/@czottmann/pi-automode/") ||
+    normalized.includes("/node_modules/@ibartel/pi-automode-ext/") ||
     (isInside(policyPath, policyCwd) && file.includes("auto-mode"))
   ) {
     return true;

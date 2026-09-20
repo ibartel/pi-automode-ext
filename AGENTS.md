@@ -2,7 +2,7 @@
 
 ## Project overview
 
-This repository is `@czottmann/pi-automode`, a Pi extension package that implements Claude Code-style auto mode guardrails. The extension intercepts Pi agent tool calls before execution and blocks actions through permission rules, deterministic hard-deny checks, protected-path handling, and an LLM classifier.
+This repository is `@ibartel/pi-automode-ext`, a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-automode) — a Pi extension package that implements Claude Code-style auto mode guardrails. The extension intercepts Pi agent tool calls before execution and blocks actions through permission rules, deterministic hard-deny checks, protected-path handling, and an LLM classifier.
 
 This is not a sandbox. Do not describe it as one.
 
@@ -16,7 +16,7 @@ This is not a sandbox. Do not describe it as one.
 
 ## Issue tracking
 
-Track issues in [GitHub](https://github.com/czottmann/pi-automode/issues). Use the `gh` CLI for issue operations.
+Track issues in [GitHub](https://github.com/ibartel/pi-automode-ext/issues). Use the `gh` CLI for issue operations.
 
 GitHub Issues has no `Draft` state. Create captured tickets as open issues and state that they are Drafts in the description.
 

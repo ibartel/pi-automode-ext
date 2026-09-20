@@ -1,6 +1,6 @@
 # Glossary
 
-This glossary defines project terms for `@czottmann/pi-automode`. It does not define standard technical words. Each entry links to a longer explanation where applicable.
+This glossary defines project terms for `@ibartel/pi-automode-ext`. It does not define standard technical words. Each entry links to a longer explanation where applicable.
 
 ## Enforcement flow
 

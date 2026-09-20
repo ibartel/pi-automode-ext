@@ -1,6 +1,8 @@
-# pi-automode
+# pi-automode-ext
 
 Claude Code-style auto mode for Pi.
+
+This is a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-automode) by Ingo Bartel, published as `@ibartel/pi-automode-ext`. It is not a sandbox. Extensions run in the Pi process. A malicious extension can do anything that your user account can do.
 
 This is a guardrail extension. It intercepts agent tool calls before execution and blocks actions that match permission deny rules, deterministic hard-deny checks, or the auto-mode classifier's block decision.
 
@@ -12,12 +14,21 @@ Pi-automode does not guard user `!` or `!!` shell commands. It guards only agent
 
 Pi-automode supports Pi and Oh My Pi (OMP) 18. It automatically uses OMP's legacy completion API. The integration needs no OMP-specific configuration.
 
+## Differences from upstream
+
+Everything in upstream 1.16.0 is included. On top of that, this fork adds:
+
+- **Jev classifier backend** — classify with TypeSafe's Jev decision model via `openrouter/typesafe/jev-1.13` (OpenRouter Decisions API) or `typesafe/jev-latest` (native System One API). One typed-questions call replaces both LLM stages; decisions are computed locally from calibrated probabilities and fail closed. See [docs/configuration.md](docs/configuration.md).
+- **Interactive confirmation** — classifier blocks prompt for confirmation when a UI is available (like Claude Code's auto mode) instead of stopping the agent outright. On by default; opt out with `autoMode.interactiveConfirm: false`. Deterministic denies remain unconditional.
+- **Persistent approvals** — the confirmation dialog offers "Always allow" choices that persist an exact-match `permissions.allow` rule to the global config or the project-local `.pi/automode.local.json` and apply it immediately.
+- **Editable dev checkouts** — the deterministic safety-control path check no longer hard-denies a source checkout of this extension under auto mode; only installed locations stay protected.
+
 ## Install
 
 From npm:
 
 ```bash
-pi install npm:@czottmann/pi-automode
+pi install npm:@ibartel/pi-automode-ext
 ```
 
 From a local checkout:
@@ -244,11 +255,8 @@ CAUTION: Do not move a correct release tag. Moving the tag changes a published r
 
 When GitHub creates the tag, the `release` event occurs. A rerun of a failed `release` workflow uses the original reference. It does not use the moved tag.
 
-## Author
+## Credits
 
-Carlo Zottmann, <carlo@zottmann.dev>
+**pi-automode-ext** is maintained by Ingo Bartel ([@ibartel](https://github.com/ibartel)).
 
-- Website: https://actions.work
-- GitHub: https://github.com/czottmann
-- Bluesky: https://bsky.app/profile/zottmann.dev
-- Mastodon: https://norden.social/@czottmann
+It is a fork of **pi-automode** by Carlo Zottmann, <carlo@zottmann.dev> — Website: https://actions.work, GitHub: https://github.com/czottmann, Bluesky: https://bsky.app/profile/zottmann.dev, Mastodon: https://norden.social/@czottmann. The original project is MIT-licensed; its notice is retained in [LICENSE.md](LICENSE.md).

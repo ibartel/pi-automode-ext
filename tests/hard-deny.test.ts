@@ -528,6 +528,7 @@ test("deterministic hard deny allows dev checkouts but still denies installed pi
 	for (const path of [
 		"/Users/dev/project/node_modules/pi-automode/extensions/auto-mode/extension.ts",
 		"/Users/dev/project/node_modules/@czottmann/pi-automode/dist/extension.js",
+		"/Users/dev/project/node_modules/@ibartel/pi-automode-ext/dist/extension.js",
 	]) {
 		assert.match(
 			deterministicHardDeny("write", { path }, "/tmp/project") ?? "",
