@@ -2,7 +2,7 @@
 
 Claude Code-style auto mode for Pi.
 
-This is a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-automode) by Ingo Bartel, published as `@ibartel/pi-automode-ext`. It is not a sandbox. Extensions run in the Pi process. A malicious extension can do anything that your user account can do.
+This is a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-automode) by Ingo Bartel, published as `@ibartel/pi-automode-ext`.
 
 This is a guardrail extension. It intercepts agent tool calls before execution and blocks actions that match permission deny rules, deterministic hard-deny checks, or the auto-mode classifier's block decision.
 
