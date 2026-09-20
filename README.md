@@ -2,7 +2,7 @@
 
 Claude Code-style auto mode for Pi.
 
-This is a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-automode) by Ingo Bartel, published as `@ibartel/pi-automode-ext`.
+This is a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-automode) by Ingo Bartel, published as `@ibartel74/pi-automode-ext`.
 
 This is a guardrail extension. It intercepts agent tool calls before execution and blocks actions that match permission deny rules, deterministic hard-deny checks, or the auto-mode classifier's block decision.
 
@@ -28,7 +28,7 @@ Everything in upstream 1.16.0 is included. On top of that, this fork adds:
 From npm:
 
 ```bash
-pi install npm:@ibartel/pi-automode-ext
+pi install npm:@ibartel74/pi-automode-ext
 ```
 
 From a local checkout:

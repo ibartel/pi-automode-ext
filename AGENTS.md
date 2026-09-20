@@ -2,7 +2,7 @@
 
 ## Project overview
 
-This repository is `@ibartel/pi-automode-ext`, a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-automode) — a Pi extension package that implements Claude Code-style auto mode guardrails. The extension intercepts Pi agent tool calls before execution and blocks actions through permission rules, deterministic hard-deny checks, protected-path handling, and an LLM classifier.
+This repository is `@ibartel74/pi-automode-ext`, a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-automode) — a Pi extension package that implements Claude Code-style auto mode guardrails. The extension intercepts Pi agent tool calls before execution and blocks actions through permission rules, deterministic hard-deny checks, protected-path handling, and an LLM classifier.
 
 This is not a sandbox. Do not describe it as one.
 
