@@ -4,6 +4,8 @@ This is a fork of [`czottmann/pi-automode`](https://github.com/czottmann/pi-auto
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
 ## Security
 
 - **Deterministic decision-log protection** — The pi-automode session decision logs (`*-pi-automode.jsonl` sidecars) are now safety-control paths: mutating them with `write`, `edit`, or shell redirection is hard-denied without classifier review. Previously the audit log was protected only by the classifier. Reading, tailing, and searching the logs stays allowed.
