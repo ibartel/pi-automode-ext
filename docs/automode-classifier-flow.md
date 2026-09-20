@@ -20,9 +20,12 @@ For each Pi `tool_call` event, the extension does this:
 12. Otherwise, apply the inside-working-directory, `permissions.allow`, and read-only tiers in that order.
 13. Send every remaining action through a one-token conservative filter.
 14. If the filter requests review, run structured classifier review.
-15. Persist state and update the UI status and denial history.
+15. If the classifier blocked, `interactiveConfirm` is on (default), and a UI is available, ask the user: allow once, always allow (persisting an exact-match `permissions.allow` rule globally or for this project), or block. A decline or cancel blocks with the classifier's reason preserved.
+16. Persist state and update the UI status and denial history.
 
 The default posture is fail-closed. If model resolution, authentication, a classifier call, or response parsing fails, pi-automode blocks the action.
+
+Classifier blocks — including these fail-closed blocks — prompt the user for confirmation when `interactiveConfirm` is on (default) and a UI is available. Approval allows the action; a decline or a missing UI keeps the block.
 
 ## Diagram
 
@@ -66,21 +69,27 @@ flowchart TD
 
   N --> O{Exact safe token?}
   O -- yes --> Q[Allow tool]
-  O -- malformed or error --> O1[Block: fail closed]
+  O -- malformed or error --> O1{interactiveConfirm and UI?}
   O -- review --> P[Run structured review]
   P --> P1{Valid allow decision?}
   P1 -- yes --> Q
-  P1 -- no or error --> R[Block with classifier reason]
+  P1 -- no or error --> O1
+  O1 -- yes --> V[Ask user: allow once, always allow, or block]
+  V -- allow once --> Q2[Allow: user-confirmed]
+  V -- always allow --> W[Persist permissions.allow rule, reload config]
+  W --> Q2
+  V -- block or cancel --> R[Block with classifier reason]
+  O1 -- no --> R
 
   X --> S[Persist state and update UI]
   F1 --> S
   H1 --> S
   I1 --> S
   K1 --> S
-  O1 --> S
   R --> S
   L1 --> T[Persist allow state and update UI]
   Q --> T
+  Q2 --> T
 ```
 
 ## Configuration loading
@@ -373,6 +382,16 @@ Classifier response was not valid decision JSON; auto mode fails closed.
 
 If the model call throws or returns an error or aborted response, pi-automode blocks the action immediately. It uses a classifier failure message.
 
+## Interactive confirmation of classifier blocks
+
+`interactiveConfirm` (default `true`) turns classifier blocks into a user prompt when a UI is available (`ctx.hasUI`). It applies to every tier the classifier can return with a block decision: `hard_deny`, `soft_deny`, and fail-closed `none` blocks (model resolution failures, authentication failures, timeouts, malformed responses).
+
+The dialog shows the tier, the classifier's reason, and the action summary, with four choices: allow once; always allow globally; always allow in this project; block. The always-allow choices persist an exact-match `permissions.allow` rule (`bash(<command>)` or `<tool>(<path>)`) and reload the effective configuration so the rule applies immediately. Rules are only generated for targets without wildcards or pattern syntax; tools without a patternable argument only offer allow-once and block. Any approval increments `userConfirmed`, allows the action, and records a `user-confirmed` allow decision. A decline or a cancelled dialog blocks the action and records a `classifier` denial whose reason names the decline and preserves the classifier's reason.
+
+Without a UI (print or JSON mode) or with `interactiveConfirm: false`, the block stands unchanged, so the fail-closed posture is preserved: no action is ever silently allowed. Deterministic denials — `permissions.deny`, deterministic hard-deny checks, and `deniedPaths` — never prompt; they remain unconditional.
+
+The confirmation is a live human decision captured at action time. It is separate from the transcript-based `explicit_intent` and `allow` overrides that the classifier evaluates, and it does not change the classifier's policy prompt: transcript content still cannot self-authorize a blocked action.
+
 ## State, UI, and denial history
 
 Every checked action increments `checkedActions`.
@@ -381,6 +400,8 @@ Allowed actions store:
 
 - `lastDecision: "allow"`
 - `lastReason`
+
+Actions allowed through an interactive confirmation also increment `userConfirmed`.
 
 Blocked actions also increment `blockedActions` and add a denial record. Each denial record contains:
 

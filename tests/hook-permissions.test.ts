@@ -1145,3 +1145,377 @@ test("tool_call broad permissions.allow cannot bypass deterministic denies under
 		else process.env.TMPDIR = previousTmpdir;
 	}
 });
+
+// --- interactive confirmation of classifier blocks -------------------------
+
+test("classifier soft_deny prompts the user and allows on approval when interactiveConfirm is on", async () => {
+	const ctx = createFakeCtx();
+	const selectCalls: Array<{ title: string; options: string[] }> = [];
+	ctx.ui.select = async (title: string, options: string[]) => {
+		selectCalls.push({ title, options });
+		return "Allow once";
+	};
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "force push rewrites shared history" }),
+		ctx,
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "git push --force origin feature" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.classifierCalls, 1);
+	assert.equal(selectCalls.length, 1);
+	assert.match(selectCalls[0].title, /soft_deny/);
+	assert.match(selectCalls[0].title, /force push rewrites shared history/);
+	assert.match(selectCalls[0].title, /git push --force origin feature/);
+	assert.deepEqual(selectCalls[0].options, [
+		"Allow once",
+		"Always allow (global): bash(git push --force origin feature)",
+		"Always allow (this project): bash(git push --force origin feature)",
+		"Custom allow rule (this project)…",
+		"Custom allow rule (global)…",
+		"Block",
+	]);
+	assert.equal(harness.entries.at(-1)?.data.userConfirmed, 1);
+	assert.equal(harness.entries.at(-1)?.data.blockedActions, 0);
+});
+
+test("classifier hard_deny blocks also prompt when interactiveConfirm is on", async () => {
+	const ctx = createFakeCtx();
+	ctx.ui.select = async () => "Allow once";
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "hard_deny", reason: "credential exposure" }),
+		ctx,
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(harness.entries.at(-1)?.data.userConfirmed, 1);
+});
+
+test("fail-closed classifier blocks prompt when interactiveConfirm is on", async () => {
+	const ctx = createFakeCtx();
+	let prompted = 0;
+	ctx.ui.select = async () => {
+		prompted += 1;
+		return "Allow once";
+	};
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({
+			decision: "block",
+			tier: "none",
+			reason: "Classifier failed; auto mode fails closed: HTTP 401",
+		}),
+		ctx,
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.equal(prompted, 1);
+});
+
+test("declined interactive confirmation blocks and names the classifier reason", async () => {
+	const ctx = createFakeCtx();
+	ctx.ui.select = async () => "Block";
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "production deploy" }),
+		ctx,
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx) as { block?: boolean; reason?: string };
+
+	assert.equal(result.block, true);
+	assert.match(result.reason ?? "", /Declined interactive confirmation \(soft_deny\): production deploy/);
+	assert.equal(harness.entries.at(-1)?.data.blockedActions, 1);
+	assert.equal(harness.entries.at(-1)?.data.userConfirmed, 0);
+});
+
+test("cancelling the confirmation dialog blocks the action", async () => {
+	const ctx = createFakeCtx();
+	ctx.ui.select = async () => undefined;
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "production deploy" }),
+		ctx,
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx) as { block?: boolean; reason?: string };
+
+	assert.equal(result.block, true);
+	assert.match(result.reason ?? "", /Declined interactive confirmation \(soft_deny\): production deploy/);
+});
+
+test("classifier blocks without a UI still block when interactiveConfirm is on", async () => {
+	const ctx = createFakeCtx([], { hasUI: false });
+	let prompted = 0;
+	ctx.ui.select = async () => {
+		prompted += 1;
+		return "Allow once";
+	};
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "headless block" }),
+		ctx,
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx) as { block?: boolean; reason?: string };
+
+	assert.equal(result.block, true);
+	assert.match(result.reason ?? "", /headless block/);
+	assert.equal(prompted, 0);
+});
+
+test("interactiveConfirm off blocks classifier denials without prompting", async () => {
+	const ctx = createFakeCtx();
+	let prompted = 0;
+	ctx.ui.select = async () => {
+		prompted += 1;
+		return "Allow once";
+	};
+	const harness = await setupHookTest({
+		classifier: async () => ({ decision: "block", tier: "hard_deny", reason: "mock block" }),
+		ctx,
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx) as { block?: boolean; reason?: string };
+
+	assert.equal(result.block, true);
+	assert.match(result.reason ?? "", /mock block/);
+	assert.equal(prompted, 0);
+});
+
+test("always-allow (global) persists the rule and allows the action", async () => {
+	const ctx = createFakeCtx();
+	const saved: Array<{ rule: string; scope: string; cwd: string }> = [];
+	ctx.ui.select = async (_title: string, options: string[]) =>
+		options.find((option) => option.startsWith("Always allow (global)")) ?? "Block";
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "production deploy" }),
+		ctx,
+		saveAllowRule: (rule, scope, cwd) => {
+			saved.push({ rule, scope, cwd });
+			return { path: "/tmp/fake-global.json", added: true };
+		},
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.deepEqual(saved, [{ rule: "bash(npm publish)", scope: "global", cwd: "/tmp/project" }]);
+	assert.equal(harness.entries.at(-1)?.data.userConfirmed, 1);
+});
+
+test("always-allow (this project) persists the rule to the project scope", async () => {
+	const ctx = createFakeCtx();
+	const saved: Array<{ rule: string; scope: string }> = [];
+	ctx.ui.select = async (_title: string, options: string[]) =>
+		options.find((option) => option.startsWith("Always allow (this project)")) ?? "Block";
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "production deploy" }),
+		ctx,
+		saveAllowRule: (rule, scope) => {
+			saved.push({ rule, scope });
+			return { path: "/tmp/project/.pi/automode.local.json", added: true };
+		},
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.deepEqual(saved, [{ rule: "bash(npm publish)", scope: "project" }]);
+});
+
+test("actions without a patternable target only offer allow-once and block", async () => {
+	const ctx = createFakeCtx();
+	let offered: string[] = [];
+	ctx.ui.select = async (_title: string, options: string[]) => {
+		offered = options;
+		return "Allow once";
+	};
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "delegated work" }),
+		ctx,
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "subagent",
+		input: { prompt: "clean the repo" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.deepEqual(offered, ["Allow once", "Block"]);
+});
+
+test("custom allow rule persists the user-edited wildcard rule", async () => {
+	const ctx = createFakeCtx();
+	const saved: Array<{ rule: string; scope: string }> = [];
+	ctx.ui.select = async (_title: string, options: string[]) =>
+		options.find((option) => option.startsWith("Custom allow rule (this project)")) ?? "Block";
+	ctx.ui.input = async () => "bash(npm test*)";
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "production deploy" }),
+		ctx,
+		saveAllowRule: (rule, scope) => {
+			saved.push({ rule, scope });
+			return { path: "/tmp/project/.pi/automode.local.json", added: true };
+		},
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm test" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.deepEqual(saved, [{ rule: "bash(npm test*)", scope: "project" }]);
+	assert.equal(harness.entries.at(-1)?.data.userConfirmed, 1);
+});
+
+test("custom allow rule input is prefilled with the exact rule", async () => {
+	const ctx = createFakeCtx();
+	const prefills: Array<string | undefined> = [];
+	ctx.ui.select = async (_title: string, options: string[]) =>
+		options.find((option) => option.startsWith("Custom allow rule (global)")) ?? "Block";
+	ctx.ui.input = async (_title: string, placeholder?: string) => {
+		prefills.push(placeholder);
+		return "bash(git push*)";
+	};
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "history rewrite" }),
+		ctx,
+	});
+
+	await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "git push --force origin feature" },
+	}, harness.ctx);
+
+	assert.deepEqual(prefills, ["bash(git push --force origin feature)"]);
+});
+
+test("invalid custom rules warn and re-prompt; cancelling the input returns to the choice dialog", async () => {
+	const ctx = createFakeCtx();
+	const choices: string[] = [];
+	const inputs: Array<string | undefined> = [];
+	ctx.ui.select = async (_title: string, options: string[]) => {
+		const custom = options.find((option) => option.startsWith("Custom allow rule (this project)"));
+		const choice = custom && choices.length < 2 ? custom : "Block";
+		choices.push(choice);
+		return choice;
+	};
+	ctx.ui.input = async () => {
+		// First entry targets the wrong tool, second is cancelled.
+		const value = inputs.length === 0 ? "read(x)" : undefined;
+		inputs.push(value);
+		return value;
+	};
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "production deploy" }),
+		ctx,
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx) as { block?: boolean; reason?: string };
+
+	assert.equal(result.block, true);
+	assert.equal(choices.length, 3, "choice dialog re-prompted after each failed input");
+	assert.equal(harness.entries.at(-1)?.data.userConfirmed, 0);
+	assert.equal(
+		ctx.notifications.some((n) => /Invalid allow rule/.test(n.message)),
+		true,
+	);
+});
+
+test("a failing rule save still allows the approved action and reports the error", async () => {
+	const ctx = createFakeCtx();
+	ctx.ui.select = async (_title: string, options: string[]) =>
+		options.find((option) => option.startsWith("Always allow (global)")) ?? "Block";
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "production deploy" }),
+		ctx,
+		saveAllowRule: () => {
+			throw new Error("disk full");
+		},
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.ok(
+		ctx.notifications.some((n) => n.type === "error" && /disk full/.test(n.message)),
+	);
+});
+
+test("always-allow (this project) is offered in untrusted projects and notes the trust gate", async () => {
+	const ctx = createFakeCtx();
+	ctx.isProjectTrusted = () => false;
+	const saved: Array<{ rule: string; scope: string }> = [];
+	ctx.ui.select = async (_title: string, options: string[]) =>
+		options.find((option) => option.startsWith("Always allow (this project)")) ?? "Block";
+	const harness = await setupHookTest({
+		config: baseConfig({ interactiveConfirm: true }),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "production deploy" }),
+		ctx,
+		saveAllowRule: (rule, scope) => {
+			saved.push({ rule, scope });
+			return { path: "/tmp/project/.pi/automode.local.json", added: true };
+		},
+	});
+
+	const result = await harness.emit("tool_call", {
+		toolName: "bash",
+		input: { command: "npm publish" },
+	}, harness.ctx);
+
+	assert.equal(result, undefined);
+	assert.deepEqual(saved, [{ rule: "bash(npm publish)", scope: "project" }]);
+	assert.ok(
+		ctx.notifications.some((n) => /trust/.test(n.message)),
+		"untrusted-project save must explain the rule is inert until trusted",
+	);
+});

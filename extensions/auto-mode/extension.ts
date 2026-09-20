@@ -11,6 +11,7 @@ import { Type } from "typebox";
 import {
   classifierReasoningForConfig,
   defaultClassifyAction,
+  resolveJevApiKey,
   serializeClassifierAction,
 } from "./classifier.ts";
 import { analyzeBash, type BashAnalysis } from "./bash.ts";
@@ -29,9 +30,11 @@ import {
   type GlobalConfigPreparation,
   loadEffectiveConfigWithDiagnostics,
   prepareGlobalConfig,
+  persistAllowRule,
   writeGlobalClassifierModel,
 } from "./config.ts";
 import { deterministicHardDeny } from "./hard-deny.ts";
+import { isJevClassifierModel, JEV_API_KEY_ENV, JEV_TYPESAFE_API_KEY_ENV } from "./jev.ts";
 import {
   createLogger,
   newDecisionId,
@@ -41,7 +44,9 @@ import {
 import { formatModelSpec, parseModelSpec } from "./model.ts";
 import { promptForClassifierModel } from "./model-selector.ts";
 import {
+  allowRuleForAction,
   matchesAllowedToolPatterns,
+  normalizeEditedAllowRule,
   matchesDeniedPath,
   matchesToolPattern,
   matchingBashCommandText,
@@ -78,6 +83,11 @@ import { safeJson, truncateMiddle } from "./utils.ts";
 const INSPECT_TOOL = "automode_inspect";
 const INSPECTION_ACTIONS = ["status", "config", "defaults", "denials"] as const;
 type InspectionAction = (typeof INSPECTION_ACTIONS)[number];
+
+const CONFIRM_ALLOW_ONCE = "Allow once";
+const CONFIRM_CUSTOM_PROJECT = "Custom allow rule (this project)…";
+const CONFIRM_CUSTOM_GLOBAL = "Custom allow rule (global)…";
+const CONFIRM_BLOCK = "Block";
 
 function matchedCommandSummary(command: string | undefined): string | undefined {
   return command ? truncateMiddle(command, 500) : undefined;
@@ -122,6 +132,12 @@ export type PiAutomodeOptions = {
   classifyAction?: ClassifyAction;
   /** Override classifier-model persistence in tests. Runtime code writes the active global config. */
   saveClassifierModel?: (classifierModel: string) => void;
+  /** Override allow-rule persistence in tests. Runtime code writes the target config file. */
+  saveAllowRule?: (
+    rule: string,
+    scope: "global" | "project",
+    cwd: string,
+  ) => { path: string; added: boolean };
   /** Override global config migration and path selection in tests. */
   prepareGlobalConfig?: () => GlobalConfigPreparation;
   /** Override the application-owned observability log root in tests. */
@@ -224,6 +240,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
       blockedActions: 0,
       classifierAllowed: 0,
       classifierDenied: 0,
+      userConfirmed: 0,
       recentDenials: [],
     };
     let loadedContext = "";
@@ -747,6 +764,136 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
         );
       }
 
+      // Claude Code-style interactive override: when enabled and a UI is
+      // available, a classifier block (any tier, including fail-closed errors)
+      // asks the user instead of blocking outright. Approval is a live human
+      // decision, never transcript content, so prompt-injection defenses in
+      // the classifier prompt still hold. The "always allow" choices persist
+      // a permissions.allow rule — exact-match by default, or a user-edited
+      // pattern via the custom-rule choices — which by design skips classifier
+      // review for future matching actions. Without a UI the block stands.
+      if (cfg.interactiveConfirm && ctx.hasUI) {
+        const exactRule = allowRuleForAction(event.toolName, input);
+        const allowGlobal = exactRule ? `Always allow (global): ${exactRule}` : undefined;
+        const allowProject = exactRule ? `Always allow (this project): ${exactRule}` : undefined;
+        const normalizedToolName = event.toolName.trim().replace(/^@/, "").toLowerCase();
+        const supportsPatterns = normalizedToolName === "bash" || PATH_BEARING_TOOLS.has(normalizedToolName);
+        const choiceOptions = [
+          CONFIRM_ALLOW_ONCE,
+          ...(allowGlobal ? [allowGlobal] : []),
+          ...(allowProject ? [allowProject] : []),
+          ...(supportsPatterns ? [CONFIRM_CUSTOM_PROJECT, CONFIRM_CUSTOM_GLOBAL] : []),
+          CONFIRM_BLOCK,
+        ];
+        let rule: string | undefined;
+        let scope: "global" | "project" | undefined;
+        let confirmed = false;
+        while (!confirmed) {
+          const choice = await ctx.ui.select(
+            `Auto mode blocked this action (${decision.tier})\n\nReason: ${decision.reason}\n\nAction:\n${summary}`,
+            choiceOptions,
+            { signal: ctx.signal },
+          );
+          if (choice === CONFIRM_ALLOW_ONCE) {
+            confirmed = true;
+          } else if (choice === allowGlobal && exactRule) {
+            confirmed = true;
+            rule = exactRule;
+            scope = "global";
+          } else if (choice === allowProject && exactRule) {
+            confirmed = true;
+            rule = exactRule;
+            scope = "project";
+          } else if (choice === CONFIRM_CUSTOM_PROJECT || choice === CONFIRM_CUSTOM_GLOBAL) {
+            // The exact rule is the prefill; the user owns any widening, e.g.
+            // adding a `*` to `bash(npm test*)`. Wildcards are the user's
+            // explicit scope choice, never inferred.
+            const edited = await ctx.ui.input(
+              "Auto mode allow rule",
+              exactRule ?? `${normalizedToolName}(…)`,
+              { signal: ctx.signal },
+            );
+            const normalized = normalizeEditedAllowRule(event.toolName, edited);
+            if (normalized) {
+              confirmed = true;
+              rule = normalized;
+              scope = choice === CONFIRM_CUSTOM_PROJECT ? "project" : "global";
+            } else if (edited !== undefined && edited.trim() !== "") {
+              ctx.ui.notify(
+                "Invalid allow rule; expected a scoped pattern for this tool, e.g. bash(npm test*)",
+                "warning",
+              );
+            }
+            // Cancelled or empty input falls through and re-prompts the choice
+            // dialog, so an accidental escape cannot silently block.
+          } else {
+            break;
+          }
+        }
+        if (confirmed) {
+          if (scope !== undefined && rule) {
+            try {
+              const saved = (options.saveAllowRule ?? persistAllowRule)(
+                rule,
+                scope,
+                ctx.cwd,
+              );
+              loadResult = loadConfigWithDiagnostics(
+                ctx.cwd,
+                projectIsTrusted(ctx),
+              );
+              config = loadResult.config;
+              configDiagnostics = loadResult.diagnostics;
+              ctx.ui.notify(
+                `pi-automode allow rule saved to ${saved.path}: ${rule}${
+                  saved.added ? "" : " (already present)"
+                }`,
+                "info",
+              );
+              if (scope === "project" && !projectIsTrusted(ctx)) {
+                // The file is written on explicit user choice, but untrusted
+                // project config is never read, so the rule activates only
+                // after the project becomes trusted.
+                ctx.ui.notify(
+                  "Project-local allow rules apply once Pi trusts this project",
+                  "warning",
+                );
+              }
+            } catch (error) {
+              // A failed save must not revoke the user's explicit approval;
+              // the action is allowed once and the error is reported.
+              ctx.ui.notify(
+                `Failed to save pi-automode allow rule: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+                "error",
+              );
+            }
+          }
+          state.userConfirmed += 1;
+          return allow(
+            ctx,
+            "user-confirmed",
+            `User confirmed action blocked by classifier (${decision.tier}): ${decision.reason}${
+              scope !== undefined && rule
+                ? `; saved permissions.allow rule for future actions: ${rule}`
+                : ""
+            }`,
+            event.toolName,
+            summary,
+            logCtx,
+          );
+        }
+        state.classifierDenied += 1;
+        return block(ctx, {
+          timestamp: Date.now(),
+          toolName: event.toolName,
+          reason: `Declined interactive confirmation (${decision.tier}): ${decision.reason}`,
+          action: summary,
+          kind: "classifier",
+        }, logCtx);
+      }
+
       state.classifierDenied += 1;
       return block(ctx, {
         timestamp: Date.now(),
@@ -828,6 +975,7 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           blockedActions: 0,
           classifierAllowed: 0,
           classifierDenied: 0,
+          userConfirmed: 0,
           recentDenials: [],
           enabledOverride: state.enabledOverride,
         };
@@ -890,20 +1038,36 @@ export function createPiAutomode(options: PiAutomodeOptions = {}) {
           ctx.ui.notify("Classifier model unchanged", "info");
           return;
         }
-        const parsed = parseModelSpec(selected);
-        const model = parsed
-          ? ctx.modelRegistry.find(parsed.provider, parsed.id)
-          : undefined;
-        if (!model) {
-          ctx.ui.notify(`Model not found: ${selected}`, "error");
-          return;
+        let modelSpec: string;
+        const jev = isJevClassifierModel(selected);
+        if (jev) {
+          // Jev bypasses Pi's model registry on both transports.
+          if (!(await resolveJevApiKey(ctx, jev.transport))) {
+            ctx.ui.notify(
+              jev.transport === "typesafe"
+                ? `${JEV_TYPESAFE_API_KEY_ENV} is not set and no typesafe provider key is registered`
+                : `${JEV_API_KEY_ENV} is not set and no openrouter provider key is registered`,
+              "error",
+            );
+            return;
+          }
+          modelSpec = selected;
+        } else {
+          const parsed = parseModelSpec(selected);
+          const model = parsed
+            ? ctx.modelRegistry.find(parsed.provider, parsed.id)
+            : undefined;
+          if (!model) {
+            ctx.ui.notify(`Model not found: ${selected}`, "error");
+            return;
+          }
+          const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+          if (!auth.ok) {
+            ctx.ui.notify(auth.error, "error");
+            return;
+          }
+          modelSpec = formatModelSpec(model);
         }
-        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-        if (!auth.ok) {
-          ctx.ui.notify(auth.error, "error");
-          return;
-        }
-        const modelSpec = formatModelSpec(model);
         try {
           saveClassifierModel(modelSpec);
         } catch (error) {

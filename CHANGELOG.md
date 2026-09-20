@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## New features
+
+- **Jev classifier backend (OpenRouter + TypeSafe-native)** — Classify with TypeSafe's Jev decision model. One typed-questions call replaces both LLM stages; decisions are computed locally from calibrated probabilities and fail closed. Two transports: `openrouter/typesafe/jev-1.13` uses OpenRouter's Decisions API (key from `OPENROUTER_API_KEY` or a registered `openrouter` provider key; the alpha endpoint intermittently answers a valid key with 401 "User not found", so a 401 is retried once before failing closed), and `typesafe/jev-latest` calls TypeSafe's native System One API directly (`TYPESAFE_API_KEY` or a registered `typesafe` provider key).
+- **Interactive confirmation of classifier blocks** — Classifier blocks (`soft_deny`, `hard_deny`, and fail-closed errors) now prompt the user for confirmation when a UI is available instead of stopping the agent outright, like Claude Code's auto mode. Approval allows the action and is recorded as a `user-confirmed` decision with a `uc:` status counter; declining or running without a UI blocks as before. On by default; opt out with `autoMode.interactiveConfirm: false`. Deterministic denies remain unconditional.
+- **Persistent approvals in the confirmation dialog** — The classifier-block dialog now offers "Always allow" choices that persist an exact-match `permissions.allow` rule to the global config or the project-local `.pi/automode.local.json`, reloading the effective config so the rule applies immediately.
+- **Dev checkouts editable under auto mode** — The deterministic safety-control path check no longer hard-denies every path containing `/pi-automode/`; it now matches installed locations (the `~/.pi/agent/extensions/` prefix and `node_modules` vendoring), so a source checkout of this extension stays editable under auto mode.
+
 ## [1.16.0] - 2026-09-07
 
 ## New features

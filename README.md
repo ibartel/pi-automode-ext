@@ -86,6 +86,27 @@ AM● a:12 d:2 ca:5 cd:1
 - `a:` — actions allowed so far (checked minus denied).
 - `d:` — actions denied so far, for any reason (permission rule, deterministic hard-deny, or classifier).
 - `ca:` / `cd:` — classifier decisions split into allowed and denied. These segments appear after the first classifier call. `d:` counts all denials, so `d:` is always `>= cd:`.
+- `uc:` — actions allowed after you approved a classifier block in an interactive confirmation. Appears after the first approval.
+
+## Jev classifier (OpenRouter or TypeSafe-native)
+
+Instead of an LLM, pi-automode can classify with TypeSafe's Jev decision model through OpenRouter's Decisions API. Jev answers typed questions with calibrated probabilities; pi-automode makes the allow/block decision locally from them.
+
+Set `OPENROUTER_API_KEY` in Pi's environment (from <https://openrouter.ai/keys>). When the variable is absent, pi-automode falls back to any `openrouter` provider key registered in Pi's model registry (for example one configured through OMP). Then run:
+
+```text
+/automode model openrouter/typesafe/jev-1.13
+```
+
+`openrouter/~typesafe/jev-latest` also works, but the alias moves between releases; a safety classifier should be reproducible. See [Configuration](docs/configuration.md#jev-classifier-openrouter) for how Jev answers map to decisions.
+
+With a TypeSafe API key instead, bypass OpenRouter entirely: set `TYPESAFE_API_KEY` in Pi's environment (from <https://console.typesafe.ai/keys>) and run:
+
+```text
+/automode model typesafe/jev-latest
+```
+
+`typesafe/...` specs call TypeSafe's System One API directly. When the variable is absent, pi-automode falls back to any `typesafe` provider key registered in Pi's model registry. GUI-launched sessions (for example Orca) do not inherit shell profile variables — set the variable where the host application sees it, for example `launchctl setenv TYPESAFE_API_KEY <key>` before launching it.
 
 ## Docs
 
@@ -129,6 +150,24 @@ Both stages receive the complete current tool input in a dedicated message. Tran
 Both stages use a classifier-specific session key. They request short cache retention from providers that support it. A missing model, provider failure, or malformed response blocks the action.
 
 Pi-automode parses Bash structure with `unbash` before permission and deterministic hard-deny checks. The analysis includes nested commands and literal shell-wrapper scripts. A Bash parse error blocks the action.
+
+## Interactive confirmation of classifier blocks
+
+When the classifier blocks an action, pi-automode can ask you instead of stopping the agent outright — like Claude Code's auto mode. The dialog shows the block tier, the classifier's reason, and the action summary, with these choices:
+
+- **Allow once** — run the action now.
+- **Always allow (global)** — also persist an exact-match `permissions.allow` rule to the global config, so identical future actions skip classifier review everywhere.
+- **Always allow (this project)** — the same rule, persisted to the project's `.pi/automode.local.json`. In an untrusted project the rule is written but stays inert until the project is trusted.
+- **Custom allow rule (this project / global)** — edit the rule before saving. The dialog is prefilled with the exact rule; you decide the scope, e.g. changing `bash(npm test)` to `bash(npm test*)`. The rule must stay scoped to the same tool; an invalid entry warns and re-prompts, and cancelling the input returns to the choice dialog.
+- **Block** — decline; the block keeps the classifier's reason. Cancelling the dialog also blocks.
+
+The exact-match "always allow" choices persist the literal command or path: commands or paths containing wildcards or pattern syntax are not offered as exact permanent choices. Custom rules are the escape hatch when you want a wider pattern — the wildcard is always typed by you, never inferred. Tools without a patternable argument only offer allow-once and block. Saved rules are `permissions.allow` entries, so they skip classifier review — including classifier `hard_deny` rules — for future matching actions.
+
+This applies to every classifier block: `soft_deny`, `hard_deny`, and fail-closed errors (classifier unavailable, malformed responses, exceeded budgets). It never applies to deterministic blocks: `permissions.deny`, deterministic hard-deny checks, and `deniedPaths` remain unconditional.
+
+Confirmation is on by default when a UI is available. Without a UI (print or JSON mode) the block stands; nothing is silently allowed. Set `autoMode.interactiveConfirm: false` to make classifier blocks unconditional again.
+
+Approvals stay auditable: they are logged as `user-confirmed` allow decisions in the observability log and counted as `uc:` in the status line.
 
 ## Examples
 

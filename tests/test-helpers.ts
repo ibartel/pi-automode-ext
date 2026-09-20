@@ -124,6 +124,12 @@ export function createFakeCtx(entries: any[] = [], overrides: Record<string, unk
 			async confirm() {
 				return true;
 			},
+			async input(): Promise<string | undefined> {
+				return undefined;
+			},
+			async select(_title: string, _options: string[]) {
+				return "Allow once";
+			},
 			theme: {
 				fg(_color: string, text: string) {
 					return text;
@@ -146,6 +152,10 @@ export function baseConfig(overrides: Partial<EffectiveConfig> = {}): EffectiveC
 		enabled: true,
 		classifyReadOnlyTools: false,
 		allowInsideWorkingDirectory: false,
+		// Fixtures opt out of interactive confirmation so the existing
+		// block-mechanism tests exercise the block path without a dialog.
+		// The production default (true) is covered in config.test.ts.
+		interactiveConfirm: false,
 		deniedPaths: [],
 		fastClassifierMaxTokens: 512,
 		classifierTimeoutMs: 20_000,
@@ -170,6 +180,7 @@ export function baseState(overrides: Partial<AutoModeState> = {}): AutoModeState
 		blockedActions: 0,
 		classifierAllowed: 0,
 		classifierDenied: 0,
+		userConfirmed: 0,
 		recentDenials: [],
 		...overrides,
 	};
@@ -180,6 +191,7 @@ export async function setupHookTest(options: {
 	classifier?: () => Promise<ClassificationDecision>;
 	ctx?: ReturnType<typeof createFakeCtx>;
 	analyze?: typeof analyzeBash;
+	saveAllowRule?: (rule: string, scope: "global" | "project", cwd: string) => { path: string; added: boolean };
 } = {}) {
 	const fake = createFakePi();
 	let classifierCalls = 0;
@@ -191,6 +203,7 @@ export async function setupHookTest(options: {
 			return classifier();
 		},
 		analyzeBash: options.analyze,
+		saveAllowRule: options.saveAllowRule,
 	})(fake.pi);
 	const ctx = options.ctx ?? createFakeCtx(fake.entries);
 	await fake.emit("session_start", { type: "session_start" }, ctx);

@@ -20,6 +20,7 @@ import {
 	DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY,
 	DEFAULT_CLASSIFY_READ_ONLY_TOOLS,
 	DEFAULT_HARD_DENY,
+	DEFAULT_INTERACTIVE_CONFIRM,
 	DEFAULT_MAX_USER_TRANSCRIPT_TOKENS,
 	DEFAULT_SOFT_DENY,
 	PI_GLOBAL_SETTINGS,
@@ -29,8 +30,10 @@ import {
 	loadEffectiveConfigWithDiagnostics,
 	modelVisibleConfigDiagnostics,
 	prepareGlobalConfig,
+	persistAllowRule,
 	validateSettingsFile,
 	writeGlobalClassifierModel,
+	type SettingsFile,
 } from "../extensions/auto-mode.ts";
 import {
 	baseConfig,
@@ -858,6 +861,45 @@ test("invalid boolean config values produce diagnostics and do not override defa
 	assert.equal(configAIWD.allowInsideWorkingDirectory, DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY);
 });
 
+test("interactiveConfirm defaults to true and follows scalar precedence", () => {
+	assert.equal(DEFAULT_INTERACTIVE_CONFIRM, true);
+	assert.equal(buildEffectiveConfigFromSources({}).interactiveConfirm, true);
+
+	const disabled = buildEffectiveConfigFromSources({
+		globalSettings: [{ autoMode: { interactiveConfirm: false } }],
+	});
+	assert.equal(disabled.interactiveConfirm, false);
+
+	const reenabled = buildEffectiveConfigFromSources({
+		globalSettings: [{ autoMode: { interactiveConfirm: false } }],
+		projectLocalSettings: [{ autoMode: { interactiveConfirm: true } }],
+	});
+	assert.equal(reenabled.interactiveConfirm, true);
+
+	// Shared project config cannot change autoMode scalars.
+	const shared = buildEffectiveConfigFromSources({
+		projectSharedSettings: [{ autoMode: { interactiveConfirm: false } }],
+	});
+	assert.equal(shared.interactiveConfirm, true);
+});
+
+test("invalid interactiveConfirm values produce diagnostics and do not override defaults", () => {
+	// Intentionally invalid config: validation must reject the string at runtime.
+	const invalidSettings = {
+		autoMode: { interactiveConfirm: "false" },
+	} as unknown as SettingsFile;
+	const diagnostics = validateSettingsFile(invalidSettings, "test-config");
+	assert.equal(
+		diagnostics.some((line) => line.includes("autoMode.interactiveConfirm must be a boolean")),
+		true,
+	);
+
+	const config = buildEffectiveConfigFromSources({
+		projectLocalSettings: [invalidSettings],
+	});
+	assert.equal(config.interactiveConfirm, DEFAULT_INTERACTIVE_CONFIRM);
+});
+
 test("invalid numeric config values produce diagnostics and do not override defaults", () => {
 	// classifierTimeoutMs: -1 should be rejected
 	const configTimeout = buildEffectiveConfigFromSources({
@@ -915,10 +957,16 @@ test("rule lists replace defaults only for their own section when $defaults is o
 	assert.deepEqual(config.softDeny, DEFAULT_SOFT_DENY);
 });
 
-test("default local file policy requires bounded user authorization", () => {
-	assert.equal(DEFAULT_ALLOW.some((rule) => rule.includes("deleting files created during the current task")), true);
-	assert.equal(DEFAULT_ALLOW.some((rule) => rule.includes("a direct user authorization names the task, one repository or worktree, permitted path scopes")), true);
-	assert.equal(DEFAULT_SOFT_DENY.some((rule) => rule.includes("a direct user authorization names the task, one repository or worktree, permitted path scopes")), true);
+test("default local file policy allows in-repo edits and requires bounded authorization only outside the repo", () => {
+	assert.equal(DEFAULT_ALLOW.some((rule) => rule.includes("inside the working tree, including files that existed before the session started")), true);
+	assert.equal(
+		DEFAULT_SOFT_DENY.some((rule) => rule.includes("outside the current repository or worktree that existed before session start")),
+		true,
+	);
+	assert.equal(
+		DEFAULT_SOFT_DENY.some((rule) => rule.includes("a direct user authorization names the task, one repository or location, permitted path scopes")),
+		true,
+	);
 });
 
 test("rule lists combine across configurable scopes when $defaults is present", () => {
@@ -1160,4 +1208,45 @@ test("validateSettingsFile accepts a valid classifierTimeoutMs", () => {
 		"inline",
 	);
 	assert.equal(diagnostics.length, 0);
+});
+
+test("persistAllowRule writes global rules while preserving existing settings", () => {
+	const dir = mkdtempSync(join(os.tmpdir(), "pi-automode-allow-rule-"));
+	try {
+		const path = join(dir, "config.json");
+		writeFileSync(path, JSON.stringify({
+			autoMode: { enabled: false },
+			permissions: { deny: ["bash(sudo *)"] },
+		}));
+
+		const result = persistAllowRule("bash(npm publish)", "global", dir, path);
+		assert.deepEqual(result, { path, added: true });
+		assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+			autoMode: { enabled: false },
+			permissions: { deny: ["bash(sudo *)"], allow: ["bash(npm publish)"] },
+		});
+
+		const duplicate = persistAllowRule("bash(npm publish)", "global", dir, path);
+		assert.equal(duplicate.added, false);
+		assert.deepEqual(
+			JSON.parse(readFileSync(path, "utf8")).permissions.allow,
+			["bash(npm publish)"],
+		);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("persistAllowRule creates the project-local file including the .pi directory", () => {
+	const dir = mkdtempSync(join(os.tmpdir(), "pi-automode-allow-rule-"));
+	try {
+		const result = persistAllowRule("write(src/app.ts)", "project", dir);
+		assert.equal(result.path, join(dir, ".pi/automode.local.json"));
+		assert.equal(result.added, true);
+		assert.deepEqual(JSON.parse(readFileSync(result.path, "utf8")), {
+			permissions: { allow: ["write(src/app.ts)"] },
+		});
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

@@ -13,6 +13,14 @@ import {
   CLASSIFIER_SYSTEM_PROMPT,
   DEFAULT_FAST_CLASSIFIER_MAX_TOKENS,
 } from "./constants.ts";
+import {
+  buildJevRequest,
+  classifyWithJev,
+  isJevClassifierModel,
+  JEV_API_KEY_ENV,
+  JEV_TYPESAFE_API_KEY_ENV,
+  type JevTransport,
+} from "./jev.ts";
 import { formatModelSpec, parseModelSpec } from "./model.ts";
 import { buildClassifierTranscript } from "./transcript.ts";
 import type {
@@ -756,6 +764,90 @@ export function classifierCacheSessionId(ctx: ExtensionContext): string {
   const digest = createHash("sha256").update(source).digest("hex").slice(0, 32);
   return `pi-automode-${digest}`;
 }
+function buildClassifierContextText(
+  ctx: ExtensionContext,
+  config: EffectiveConfig,
+  loadedContext: string,
+): string {
+  const transcript = buildClassifierTranscript(ctx, {
+    maxUserTokens: config.maxUserTranscriptTokens,
+    maxToolTokens: config.maxToolTranscriptTokens,
+  });
+  return `<loaded-project-instructions>\n${
+    loadedContext || "(none)"
+  }\n</loaded-project-instructions>\n\n<classifier-transcript>\n${
+    transcript || "(none)"
+  }\n</classifier-transcript>`;
+}
+
+/**
+ * Resolve the API key for the Jev backend: the transport's environment variable
+ * wins; otherwise fall back to any provider key registered for that transport in
+ * Pi's model registry (e.g. configured through OMP). Neither present fails
+ * closed inside classifyWithJev.
+ */
+export async function resolveJevApiKey(
+  ctx: ExtensionContext,
+  transport: JevTransport = "openrouter",
+): Promise<string | undefined> {
+  const envName = transport === "typesafe"
+    ? JEV_TYPESAFE_API_KEY_ENV
+    : JEV_API_KEY_ENV;
+  const fromEnv = process.env[envName];
+  if (fromEnv) return fromEnv;
+  const providerModel = ctx.modelRegistry
+    .getAvailable()
+    .find((model) => model.provider === transport);
+  if (!providerModel) return undefined;
+  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(providerModel);
+  return auth.ok ? auth.apiKey : undefined;
+}
+
+async function classifyActionWithJev(
+  ctx: ExtensionContext,
+  config: EffectiveConfig,
+  action: string,
+  loadedContext: string,
+  jev: { modelId: string; transport: JevTransport },
+): Promise<ClassifyResult> {
+  const reasoning: ClassifierReasoning = { mode: "server-default" };
+  const systemPrompt = buildClassifierPrompt(config);
+  const contextText = buildClassifierContextText(ctx, config, loadedContext);
+  const request = buildJevRequest(jev.modelId, config, {
+    policy: systemPrompt,
+    context: contextText,
+    action,
+  });
+  const attempts: ClassifierIoAttempt[] = [];
+  const started = Date.now();
+  const decision = await classifyWithJev(
+    request,
+    config,
+    ctx.signal,
+    (attempt) => attempts.push(attempt),
+    await resolveJevApiKey(ctx, jev.transport),
+    fetch,
+    jev.transport,
+  );
+  return {
+    ...decision,
+    reasoning,
+    io: {
+      model: `${jev.transport}/${jev.modelId}`,
+      reasoning,
+      prompt: {
+        system: systemPrompt,
+        context: contextText,
+        action,
+        fastInstruction: "",
+        detailedInstruction: JSON.stringify(request.questions),
+      },
+      attempts,
+      durationMs: Date.now() - started,
+    },
+  };
+}
+
 
 export const defaultClassifyAction: ClassifyAction = async (
   ctx,
@@ -763,6 +855,10 @@ export const defaultClassifyAction: ClassifyAction = async (
   action,
   loadedContext,
 ): Promise<ClassifyResult> => {
+  const jev = isJevClassifierModel(config.classifierModel);
+  if (jev) {
+    return classifyActionWithJev(ctx, config, action, loadedContext, jev);
+  }
   const resolution = await resolveClassifier(ctx, config);
   if (!resolution.classifier || !resolution.completionPlan) {
     return {
@@ -776,15 +872,7 @@ export const defaultClassifyAction: ClassifyAction = async (
   const completionPlan = resolution.completionPlan;
 
   const systemPrompt = buildClassifierPrompt(config);
-  const transcript = buildClassifierTranscript(ctx, {
-    maxUserTokens: config.maxUserTranscriptTokens,
-    maxToolTokens: config.maxToolTranscriptTokens,
-  });
-  const contextText = `<loaded-project-instructions>\n${
-    loadedContext || "(none)"
-  }\n</loaded-project-instructions>\n\n<classifier-transcript>\n${
-    transcript || "(none)"
-  }\n</classifier-transcript>`;
+  const contextText = buildClassifierContextText(ctx, config, loadedContext);
   const contextMessage: UserMessage = {
     role: "user",
     content: [{ type: "text", text: contextText }],

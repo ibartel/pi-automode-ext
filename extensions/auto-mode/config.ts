@@ -17,6 +17,7 @@ import {
   DEFAULT_ENVIRONMENT,
   DEFAULT_FAST_CLASSIFIER_MAX_TOKENS,
   DEFAULT_HARD_DENY,
+  DEFAULT_INTERACTIVE_CONFIRM,
   DEFAULT_LOG_CONFIG,
   DEFAULT_MAX_TOOL_TRANSCRIPT_TOKENS,
   DEFAULT_MAX_USER_TRANSCRIPT_TOKENS,
@@ -284,6 +285,7 @@ export function validateSettingsFile(
         "classifyReadOnlyTools",
         "fastClassifierMaxTokens",
         "allowInsideWorkingDirectory",
+        "interactiveConfirm",
         "deniedPaths",
         "maxUserTranscriptTokens",
         "maxToolTranscriptTokens",
@@ -355,6 +357,14 @@ export function validateSettingsFile(
       ) {
         diagnostics.push(
           `${source}: autoMode.allowInsideWorkingDirectory must be a boolean`,
+        );
+      }
+      if (
+        hasOwn(autoMode, "interactiveConfirm") &&
+        typeof autoMode.interactiveConfirm !== "boolean"
+      ) {
+        diagnostics.push(
+          `${source}: autoMode.interactiveConfirm must be a boolean`,
         );
       }
       validateDeniedPathsSetting(
@@ -619,6 +629,9 @@ function applyAutoModeScalars(
       typeof settings.allowInsideWorkingDirectory === "boolean"
         ? settings.allowInsideWorkingDirectory
         : base.allowInsideWorkingDirectory,
+    interactiveConfirm: typeof settings.interactiveConfirm === "boolean"
+      ? settings.interactiveConfirm
+      : base.interactiveConfirm,
     fastClassifierMaxTokens: validFastClassifierBudget(
         settings.fastClassifierMaxTokens,
       )
@@ -672,6 +685,7 @@ export function buildEffectiveConfigFromSources(
     enabled: true,
     classifyReadOnlyTools: DEFAULT_CLASSIFY_READ_ONLY_TOOLS,
     allowInsideWorkingDirectory: DEFAULT_ALLOW_INSIDE_WORKING_DIRECTORY,
+    interactiveConfirm: DEFAULT_INTERACTIVE_CONFIRM,
     deniedPaths: [...DEFAULT_DENIED_PATHS],
     fastClassifierMaxTokens: DEFAULT_FAST_CLASSIFIER_MAX_TOKENS,
     classifierTimeoutMs: DEFAULT_CLASSIFIER_TIMEOUT_MS,
@@ -901,4 +915,34 @@ export function writeGlobalClassifierModel(
   };
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+}
+
+/**
+ * Persist a permissions.allow rule while preserving other settings. Global
+ * scope writes the user config; project scope writes the project-local file
+ * that Pi reads once the project is trusted.
+ */
+export function persistAllowRule(
+  pattern: string,
+  scope: "global" | "project",
+  cwd: string,
+  globalPath = PI_GLOBAL_SETTINGS[0],
+): { path: string; added: boolean } {
+  const path = scope === "global"
+    ? globalPath
+    : resolve(cwd, PI_PROJECT_LOCAL_SETTINGS[0]);
+  const settings = readWritableSettingsFile(path);
+  const existing = Array.isArray(settings.permissions?.allow)
+    ? settings.permissions.allow.filter(
+      (entry): entry is string => typeof entry === "string",
+    )
+    : [];
+  if (existing.includes(pattern)) return { path, added: false };
+  const next: SettingsFile = {
+    ...settings,
+    permissions: { ...settings.permissions, allow: [...existing, pattern] },
+  };
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return { path, added: true };
 }

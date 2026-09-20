@@ -48,6 +48,8 @@ export type AutoModeSettings = {
   classifierTimeoutMs?: number;
   /** When true, file tools whose resolved path is inside the working directory are allowed deterministically (no classifier), and outside-CWD file access is classified. */
   allowInsideWorkingDirectory?: boolean;
+  /** When true (default), a classifier block prompts for interactive user confirmation instead of blocking outright, when a UI is available. */
+  interactiveConfirm?: boolean;
   /** Path glob patterns (file tools) that are always denied before the classifier. Supports `~` and `*` (matches any characters, including `/`). */
   deniedPaths?: unknown;
   maxUserTranscriptTokens?: number;
@@ -95,6 +97,7 @@ export type EffectiveConfig = {
   fastClassifierMaxTokens: number;
   classifierTimeoutMs: number;
   allowInsideWorkingDirectory: boolean;
+  interactiveConfirm: boolean;
   deniedPaths: string[];
   maxUserTranscriptTokens: number;
   maxToolTranscriptTokens: number;
@@ -117,6 +120,7 @@ export type AutoModeState = {
   blockedActions: number;
   classifierAllowed: number;
   classifierDenied: number;
+  userConfirmed: number;
   recentDenials: DenialRecord[];
 };
 
@@ -139,7 +143,8 @@ export type DecisionKind =
   | DenialRecord["kind"]
   | "permissions.allow"
   | "read-only"
-  | "inside-working-directory";
+  | "inside-working-directory"
+  | "user-confirmed";
 
 export type ClassificationDecision = {
   decision: "allow" | "block";

@@ -71,7 +71,7 @@ Pi-automode writes one `decision` entry for each tool-call decision. Each allowe
 | `cwd` | working directory |
 | `tool` | tool name, for example `bash` or `write` |
 | `summary` | `actionSummary` — tool name + input JSON (truncated) |
-| `kind` | enforcement path: `permissions.deny`, `permissions.ask`, `deterministic-hard-deny`, `deterministic-path-deny`, `permissions.allow`, `inside-working-directory`, `classifier`, `read-only`, or `setup` |
+| `kind` | enforcement path: `permissions.deny`, `permissions.ask`, `deterministic-hard-deny`, `deterministic-path-deny`, `permissions.allow`, `inside-working-directory`, `classifier`, `user-confirmed`, `read-only`, or `setup` |
 | `outcome` | `allow` or `block` |
 | `reason` | the reason string (classifier reason, or the deterministic/permission reason) |
 | `classifierModel` | the configured classifier model for a classifier-routed decision |

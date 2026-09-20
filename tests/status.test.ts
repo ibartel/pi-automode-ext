@@ -77,4 +77,20 @@ test("statusLine: classifier segment shows when only denials have happened", () 
 	assert.equal(statusLine(config, state), "AM● a:0 d:2 ca:0 cd:2");
 });
 
+test("statusLine appends the uc segment when the user confirmed blocked actions", () => {
+	const config = baseConfig();
+	const state = baseState({ checkedActions: 5, blockedActions: 1, classifierAllowed: 1, classifierDenied: 1, userConfirmed: 2 });
+	assert.equal(statusLine(config, state), "AM● a:4 d:1 ca:1 cd:1 uc:2");
+});
+
+test("statusText reports the user-confirmed count", () => {
+	const text = statusText(baseConfig(), baseState({ userConfirmed: 3 }));
+	assert.match(text, /^user confirmed: 3$/m);
+});
+
+test("statusText reports whether interactive confirmation is enabled", () => {
+	assert.match(statusText(baseConfig({ interactiveConfirm: true }), baseState()), /^interactive confirm: on$/m);
+	assert.match(statusText(baseConfig({ interactiveConfirm: false }), baseState()), /^interactive confirm: off$/m);
+});
+
 // --- observability logging -------------------------------------------------

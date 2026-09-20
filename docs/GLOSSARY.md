@@ -20,15 +20,17 @@ The enforcement flow is the ordered pipeline that runs before each agent tool ca
 
 **Detailed stage** — The second classifier stage. It runs after a fast-stage review result and returns a structured allow or block decision.
 
+**Interactive confirmation** — The user prompt shown when the classifier blocks an action and `interactiveConfirm` is on (the default). Choices: allow once, always allow (persisting an exact-match `permissions.allow` rule globally or for this project), or block. A decline, cancel, or missing UI keeps the block. Deterministic denials never prompt.
+
 ## Classifier policy and rules
 
 The classifier policy defines denial tiers and rule-list syntax. See [Defaults and rule-list behavior](defaults.md).
 
-**hard_deny** — Classifier rules that block unconditionally. They are independent of the code-level [deterministic hard-deny](#enforcement-flow) checks.
+**hard_deny** — Classifier rules that block unconditionally against transcript- or model-based overrides. With `interactiveConfirm` on (default), a live user can still approve a blocked action in an [interactive confirmation](#enforcement-flow). They are independent of the code-level [deterministic hard-deny](#enforcement-flow) checks.
 
-**soft_deny** — Classifier rules that normally block but support defined overrides. Unlike [hard_deny](#classifier-policy-and-rules), these rules are not unconditional.
+**soft_deny** — Classifier rules that normally block but support defined overrides, including a live [interactive confirmation](#enforcement-flow). Unlike [hard_deny](#classifier-policy-and-rules), these rules are not unconditional.
 
-**explicit_intent** — A classifier tier for direct user authorization in the retained user transcript. It authorizes an action that matches a [soft_deny](#classifier-policy-and-rules) rule. A later user instruction that narrows or revokes authorization controls. For a pre-existing local file, see [Defaults and rule-list behavior](defaults.md).
+**explicit_intent** — A classifier tier for direct user authorization in the retained user transcript. It authorizes an action that matches a [soft_deny](#classifier-policy-and-rules) rule. A later user instruction that narrows or revokes authorization controls. For a pre-existing local file outside the repository or worktree, see [Defaults and rule-list behavior](defaults.md).
 
 **allow exception** (`autoMode.allow`) — A prose rule that overrides a matching [soft_deny](#classifier-policy-and-rules) rule. It cannot override [hard_deny](#classifier-policy-and-rules). It is independent of the [`permissions.allow` tier](#enforcement-flow).
 

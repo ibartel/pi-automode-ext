@@ -28,11 +28,12 @@ test("classifier policy scopes bounded authorization to existing local files", (
 	assert.match(CLASSIFIER_SYSTEM_PROMPT, /Do not invent deny rules/);
 	assert.match(CLASSIFIER_SYSTEM_PROMPT, /does not need to appear in ALLOW/);
 	assert.match(CLASSIFIER_SYSTEM_PROMPT, /Copying a local app icon or other non-executable asset/);
-	assert.match(CLASSIFIER_SYSTEM_PROMPT, /For modification or deletion of a pre-existing local file, a bounded direct user authorization must name/);
+	assert.match(CLASSIFIER_SYSTEM_PROMPT, /For modification or deletion of a pre-existing local file outside the current repository or worktree, a bounded direct user authorization must name/);
 	assert.match(CLASSIFIER_SYSTEM_PROMPT, /Other soft-deny actions need direct user authorization but do not require these file bounds/);
 	assert.match(CLASSIFIER_SYSTEM_PROMPT, /A later user instruction that narrows or revokes authorization controls/);
 	assert.match(CLASSIFIER_SYSTEM_PROMPT, /target stays inside a direct, bounded user authorization/);
 	assert.match(CLASSIFIER_SYSTEM_PROMPT, /target lies outside authorized scope/);
+	assert.match(CLASSIFIER_SYSTEM_PROMPT, /Editing internal\/interaction\/dashboard\.go as part of the requested task in the current repository => allow, routine in-repo work/);
 });
 
 test("classifier JSON parser accepts valid decisions and rejects invalid output", () => {

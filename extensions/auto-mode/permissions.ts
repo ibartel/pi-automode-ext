@@ -4,8 +4,10 @@ import {
   type BashCommandAnalysis,
   type BashRedirectAnalysis,
 } from "./bash.ts";
+import { PATH_BEARING_TOOLS } from "./constants.ts";
 import type { ToolPattern } from "./types.ts";
 import {
+  extractInputPath,
   expandHomePattern,
   normalizePathForMatch,
   resolveInputPath,
@@ -72,6 +74,48 @@ export function parseToolPattern(value: unknown): ToolPattern | undefined {
   const pattern: ToolPattern = { raw, toolName, argumentPattern };
   if (bashPatternAnalysis) bashPatternAnalyses.set(pattern, bashPatternAnalysis);
   return pattern;
+}
+
+/**
+ * Generate an exact-match `permissions.allow` rule for the current action, used
+ * by the interactive-confirmation "always allow" choices. Returns undefined
+ * when no safe exact rule exists: pattern metacharacters in the target would
+ * widen the match into a wildcard, implicit search roots (grep/find/ls without
+ * a path) are not persistable, and tools without a known argument cannot be
+ * scoped.
+ */
+export function allowRuleForAction(
+  toolName: string,
+  input: Record<string, unknown>,
+): string | undefined {
+  const target = toolName === "bash"
+    ? (typeof input.command === "string" ? input.command.trim() : "")
+    : extractInputPath(toolName, input) ?? "";
+  if (!target || target === ".") return undefined;
+  if (target.length > MAX_WILDCARD_PATTERN_LENGTH) return undefined;
+  if (/[*()\n\r]/.test(target)) return undefined;
+  return `${toolName}(${target})`;
+}
+
+/**
+ * Validate a user-edited allow rule from the interactive-confirmation dialog.
+ * Unlike `allowRuleForAction`, wildcards are permitted — the user explicitly
+ * chose the scope — but the rule must parse as a scoped tool pattern for the
+ * same tool as the blocked action. Returns the normalized rule, or undefined
+ * when the input is unusable.
+ */
+export function normalizeEditedAllowRule(
+  toolName: string,
+  value: unknown,
+): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_WILDCARD_PATTERN_LENGTH) return undefined;
+  if (/[\n\r]/.test(trimmed)) return undefined;
+  const pattern = parseToolPattern(trimmed);
+  if (!pattern?.argumentPattern) return undefined;
+  if (pattern.toolName !== normalizeToolName(toolName)) return undefined;
+  return pattern.raw;
 }
 
 function literalPrefixTable(value: string): number[] {

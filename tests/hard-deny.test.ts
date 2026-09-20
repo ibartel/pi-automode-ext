@@ -244,8 +244,6 @@ test("AST hard-deny checks exempt OS temp-directory subtrees", () => {
 	);
 
 	// Deleting a temp directory created with mktemp/mkdtemp is routine cleanup.
-	// Prefix avoids the separate "pi-automode" substring safety-control deny so
-	// this test exercises only the temp-root logic.
 	const created = mkdtempSync(join(os.tmpdir(), "automode-temp-subtree-"));
 	try {
 		assert.equal(
@@ -504,4 +502,37 @@ test("AST hard-deny applies temp policy to find -delete roots", () => {
 		deterministicHardDeny("bash", { command: "find /tmp -delete" }, process.cwd()) ?? "",
 		/system-wide delete/,
 	);
+});
+
+test("deterministic hard deny allows dev checkouts but still denies installed pi-automode locations", () => {
+	// A dev checkout of the extension is editable: a path segment named
+	// pi-automode alone must not hard-deny the checkout's own source files.
+	assert.equal(
+		deterministicHardDeny(
+			"write",
+			{ path: "extensions/auto-mode/extension.ts" },
+			"/Users/dev/pi-automode",
+		),
+		undefined,
+	);
+	// Files named auto-mode stay protected by the in-cwd filename rule.
+	assert.match(
+		deterministicHardDeny(
+			"write",
+			{ path: "extensions/auto-mode.ts" },
+			"/Users/dev/pi-automode",
+		) ?? "",
+		/safety-control/,
+	);
+	// Installed package copies remain hard-denied.
+	for (const path of [
+		"/Users/dev/project/node_modules/pi-automode/extensions/auto-mode/extension.ts",
+		"/Users/dev/project/node_modules/@czottmann/pi-automode/dist/extension.js",
+	]) {
+		assert.match(
+			deterministicHardDeny("write", { path }, "/tmp/project") ?? "",
+			/safety-control/,
+			path,
+		);
+	}
 });

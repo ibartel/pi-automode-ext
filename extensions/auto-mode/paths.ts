@@ -260,8 +260,13 @@ export function isSafetyControlPath(path: string, cwd: string): boolean {
     return true;
   }
   if (normalized.includes("/.pi/") && file.startsWith("automode")) return true;
+  // Installed package copies stay protected. The piAgentRoot extension prefix
+  // above already covers the global install location, and a dev checkout of
+  // the extension itself must stay editable, so the package name only denies
+  // node_modules vendoring.
   if (
-    normalized.includes("/pi-automode/") ||
+    normalized.includes("/node_modules/pi-automode/") ||
+    normalized.includes("/node_modules/@czottmann/pi-automode/") ||
     (isInside(policyPath, policyCwd) && file.includes("auto-mode"))
   ) {
     return true;

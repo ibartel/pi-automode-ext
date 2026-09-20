@@ -20,7 +20,8 @@ export function statusLine(
   const classifier = state.classifierAllowed > 0 || state.classifierDenied > 0
     ? ` ca:${state.classifierAllowed} cd:${state.classifierDenied}`
     : "";
-  return `AM${circle} a:${allowed} d:${state.blockedActions}${classifier}`;
+  const confirmed = state.userConfirmed > 0 ? ` uc:${state.userConfirmed}` : "";
+  return `AM${circle} a:${allowed} d:${state.blockedActions}${classifier}${confirmed}`;
 }
 
 export function statusText(
@@ -31,10 +32,12 @@ export function statusText(
     `enabled: ${(state.enabledOverride ?? config.enabled) ? "yes" : "no"}`,
     `classifier: ${config.classifierModel ?? "current session model"}`,
     `classifier reasoning: ${config.classifierReasoningLevel ?? "server default"}`,
+    `interactive confirm: ${config.interactiveConfirm ? "on" : "off"}`,
     `checked actions: ${state.checkedActions}`,
     `blocked actions: ${state.blockedActions}`,
     `classifier allowed: ${state.classifierAllowed}`,
     `classifier denied: ${state.classifierDenied}`,
+    `user confirmed: ${state.userConfirmed}`,
     `permissions.deny rules: ${config.permissionDeny.length}`,
     `permissions.ask rules: ${config.permissionAsk.length}`,
     `permissions.allow rules: ${config.permissionAllow.length}`,
@@ -93,10 +96,11 @@ export function restoreState(ctx: ExtensionContext): AutoModeState {
       blockedActions: entry.data.blockedActions ?? 0,
       classifierAllowed: entry.data.classifierAllowed ?? 0,
       classifierDenied: entry.data.classifierDenied ?? 0,
+      userConfirmed: entry.data.userConfirmed ?? 0,
       recentDenials: Array.isArray(entry.data.recentDenials)
         ? entry.data.recentDenials.slice(-DENIAL_HISTORY_LIMIT)
         : [],
     };
   }
-  return { checkedActions: 0, blockedActions: 0, classifierAllowed: 0, classifierDenied: 0, recentDenials: [] };
+  return { checkedActions: 0, blockedActions: 0, classifierAllowed: 0, classifierDenied: 0, userConfirmed: 0, recentDenials: [] };
 }

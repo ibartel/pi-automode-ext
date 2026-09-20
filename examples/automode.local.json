@@ -3,6 +3,7 @@
     "classifierReasoningLevel": "low",
     "classifierTimeoutMs": 20000,
     "allowInsideWorkingDirectory": false,
+    "interactiveConfirm": true,
     "deniedPaths": [
       "*.env",
       "~/.ssh/*",

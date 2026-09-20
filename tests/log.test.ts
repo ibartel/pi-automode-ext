@@ -320,6 +320,28 @@ test("tool_call logs blocked classifier decisions to the session log file", asyn
 	}
 });
 
+test("tool_call logs a user-confirmed allow when interactive confirmation is approved", async () => {
+	const t = await setupLogTest({
+		config: baseConfig({
+			log: { enabled: true, classifierIo: false },
+			interactiveConfirm: true,
+		}),
+		classifier: async () => ({ decision: "block", tier: "soft_deny", reason: "mock block" }),
+	});
+	try {
+		await t.fake.emit("tool_call", { toolName: "bash", input: { command: "npm publish" } }, t.ctx);
+		const lines = readFileSync(t.logPath, "utf8").trim().split("\n");
+		assert.equal(lines.length, 1);
+		const entry = JSON.parse(lines[0]);
+		assert.equal(entry.type, "decision");
+		assert.equal(entry.outcome, "allow");
+		assert.equal(entry.kind, "user-confirmed");
+		assert.match(entry.reason, /User confirmed action blocked by classifier \(soft_deny\): mock block/);
+	} finally {
+		rmSync(t.dir, { recursive: true, force: true });
+	}
+});
+
 test("tool_call logs effective explicit reasoning when classifier authentication is unavailable", async () => {
 	const dir = mkdtempSync(join(os.tmpdir(), "pi-automode-log-"));
 	try {

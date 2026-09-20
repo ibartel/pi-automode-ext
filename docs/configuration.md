@@ -48,6 +48,8 @@ This tier takes precedence over `classifyReadOnlyTools`. If both configuration f
 
 Protected in-tree targets do not use this allow tier. Writes and edits to `.git/hooks`, `.pi` controls, shell profiles, and configuration files still reach the classifier.
 
+`interactiveConfirm` turns classifier blocks into an interactive user confirmation when a UI is available. The default value is `true`. The dialog shows the block tier, the classifier's reason, and the action summary, and offers allow-once, always-allow (global or project), and block. The always-allow choices persist an exact-match `permissions.allow` rule — `bash(<command>)` or `<tool>(<path>)` — to the global config or `.pi/automode.local.json` and reload the effective config immediately. A project rule written in an untrusted project stays inert until the project is trusted. Persisted rules skip classifier review for future matching actions, including classifier `hard_deny` rules. Rules are not generated for targets containing wildcards or pattern syntax, and tools without a patternable argument only offer allow-once and block. This applies to every classifier block tier, including `hard_deny` and fail-closed errors such as an unavailable classifier. Deterministic denials (`permissions.deny`, deterministic hard-deny checks, `deniedPaths`) never prompt. Without a UI, or with `interactiveConfirm: false`, classifier blocks stand unchanged. Approved actions are logged as `user-confirmed` allow decisions and counted in the `uc:` status-line segment.
+
 `deniedPaths` is a list of path glob patterns. The default list is `[]`. A matching pattern blocks a file-tool call before classifier review or an allow tier.
 
 Patterns support `~`, `$HOME`, and `${HOME}` expansion. The `*` wildcard matches all characters, including `/`. Thus, `**/id_rsa` matches a private key at any depth.
@@ -58,9 +60,9 @@ If a recursive `grep` or `find` scope can contain a denied path, pi-automode blo
 
 A matching path blocks the call without classifier review or an override. The list applies only to file tools. The classifier governs `bash` path access. Both keys use the normal scalar and array precedence.
 
-`allowInsideWorkingDirectory` uses scalar precedence: global, then project-local, then `PI_AUTOMODE_SETTINGS_JSON`. `deniedPaths` entries accumulate across these configuration sources.
+`allowInsideWorkingDirectory` and `interactiveConfirm` use scalar precedence: global, then project-local, then `PI_AUTOMODE_SETTINGS_JSON`. `deniedPaths` entries accumulate across these configuration sources.
 
-Shared project `.pi/automode.json` cannot set either field. Omitting either field at a higher-precedence source does not clear a lower-source value.
+Shared project `.pi/automode.json` cannot set any of these fields. Omitting one of them at a higher-precedence source does not clear a lower-source value.
 
 Example:
 
@@ -70,6 +72,7 @@ Example:
     "classifierModel": "provider/model-id",
     "classifierReasoningLevel": "low",
     "classifyReadOnlyTools": false,
+    "interactiveConfirm": true,
     "fastClassifierMaxTokens": 512,
     "classifierTimeoutMs": 20000,
     "allowInsideWorkingDirectory": false,
@@ -202,3 +205,22 @@ For example, register an OpenRouter preset in the built-in `openrouter` provider
 ```
 
 Restart Pi (or run `/reload`), then select the model with `/automode model openrouter/@preset/nvidia-nemotron-3-nano-30b-a3b-fast`.
+
+## Jev classifier (OpenRouter)
+
+Set `classifierModel` to `openrouter/typesafe/jev-1.13` (pinned) or `openrouter/~typesafe/jev-latest` (alias) to classify with TypeSafe's Jev model through OpenRouter's Decisions API instead of an LLM. The API key comes from `OPENROUTER_API_KEY` in Pi's environment, or — when unset — from any `openrouter` provider key registered in Pi's model registry (for example one configured through OMP); if neither is present, classification fails closed. `/automode model openrouter/typesafe/jev-1.13` saves the spec without a model-registry lookup.
+
+With a TypeSafe API key, `typesafe/jev-latest` (or a pinned release such as `typesafe/jev-1.13.0`) calls TypeSafe's System One API directly instead of OpenRouter. The key comes from `TYPESAFE_API_KEY` in Pi's environment, or — when unset — from any `typesafe` provider key registered in Pi's model registry. `/automode model typesafe/jev-latest` saves the spec the same way. GUI-launched sessions do not inherit shell profile variables; set the variable where the host application sees it.
+
+Jev is a decision model, not a chat model: it is not reachable through Pi's model registry or `models.json`. Other `openrouter/...` classifier models keep using the registry path.
+
+Jev replaces both LLM stages with one call. The configured `hard_deny` and `soft_deny` rules become the options of a Choice question. Two Noul questions check for an ALLOW exception and direct user authorization. Pi-automode then decides locally, with one risk tolerance of 0.2:
+
+- Allow when the probability of "no deny rule" is at least 0.8.
+- Block with `hard_deny` when a hard-deny rule is the top rule match, or when hard-deny rules together hold at least 0.2 probability. Exceptions never override hard-deny.
+- Otherwise, the top soft-deny rule blocks unless the ALLOW-exception or user-authorization probability is at least 0.8.
+- When rule probabilities tie at zero, the more severe tier wins.
+
+The denial reason names the matched rule. `classifierReasoningLevel` and `fastClassifierMaxTokens` do not apply; `classifierTimeoutMs` does. Missing keys, request errors, timeouts, and malformed answers fail closed. The Choice question holds at most 254 deny rules.
+
+The Decisions API is an OpenRouter alpha endpoint. Responses are schema-validated; anything unexpected fails closed.

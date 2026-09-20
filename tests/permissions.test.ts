@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import {
 	MAX_WILDCARD_INPUT_LENGTH,
 	MAX_WILDCARD_PATTERN_LENGTH,
+	allowRuleForAction,
 	analyzeBash,
 	appendPermissionPathPatternSuffix,
 	buildEffectiveConfigFromSources,
@@ -15,6 +16,7 @@ import {
 	matchingBashCommandText,
 	matchesToolPattern,
 	matchesWildcardPattern,
+	normalizeEditedAllowRule,
 	normalizePermissionPathForMatch,
 	parseToolPattern,
 	validateSettingsFile,
@@ -376,4 +378,43 @@ test("denied-path matching uses the bounded wildcard matcher", () => {
 		matchesDeniedPath("/tmp/project/public.txt", ["/tmp/*/secret.txt"]),
 		false,
 	);
+});
+
+test("allowRuleForAction generates exact-match rules for bash and file tools", () => {
+	assert.equal(
+		allowRuleForAction("bash", { command: "git push --force origin feature" }),
+		"bash(git push --force origin feature)",
+	);
+	assert.equal(allowRuleForAction("write", { path: "docs/plan.md" }), "write(docs/plan.md)");
+	assert.equal(allowRuleForAction("edit", { path: "src/index.ts" }), "edit(src/index.ts)");
+	assert.equal(allowRuleForAction("grep", { path: "src", pattern: "secret" }), "grep(src)");
+});
+
+test("allowRuleForAction refuses wildcards, pattern syntax, and implicit scopes", () => {
+	// Pattern metacharacters would widen an exact rule into a wildcard match.
+	assert.equal(allowRuleForAction("bash", { command: "rm -rf build/*" }), undefined);
+	assert.equal(allowRuleForAction("bash", { command: "echo $(date)" }), undefined);
+	assert.equal(allowRuleForAction("bash", { command: "printf 'a\nb'" }), undefined);
+	// Implicit recursive search roots are not persistable targets.
+	assert.equal(allowRuleForAction("grep", { pattern: "secret" }), undefined);
+	// Tools without a patternable argument get no rule.
+	assert.equal(allowRuleForAction("subagent", { prompt: "clean the repo" }), undefined);
+	assert.equal(allowRuleForAction("bash", { command: "   " }), undefined);
+	assert.equal(allowRuleForAction("write", {}), undefined);
+});
+
+test("normalizeEditedAllowRule accepts user-scoped patterns for the same tool only", () => {
+	// Wildcards are the user's explicit scope choice, unlike allowRuleForAction.
+	assert.equal(normalizeEditedAllowRule("bash", "bash(npm test*)"), "bash(npm test*)");
+	assert.equal(normalizeEditedAllowRule("write", "  Write(src/*.ts)  "), "Write(src/*.ts)");
+	assert.equal(normalizeEditedAllowRule("edit", "edit(src/index.ts)"), "edit(src/index.ts)");
+	// Rules must stay scoped to the tool of the blocked action.
+	assert.equal(normalizeEditedAllowRule("bash", "read(x)"), undefined);
+	// Blanket and empty patterns are not persistable.
+	assert.equal(normalizeEditedAllowRule("bash", "bash"), undefined);
+	assert.equal(normalizeEditedAllowRule("bash", "bash()"), undefined);
+	assert.equal(normalizeEditedAllowRule("bash", "not a rule"), undefined);
+	assert.equal(normalizeEditedAllowRule("bash", ""), undefined);
+	assert.equal(normalizeEditedAllowRule("bash", "bash(a\nb)"), undefined);
+	assert.equal(normalizeEditedAllowRule("bash", `bash(${"a".repeat(5000)})`), undefined);
 });
